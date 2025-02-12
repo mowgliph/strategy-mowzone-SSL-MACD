@@ -1,0 +1,290 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © mowgliph
+
+//@version=6
+indicator("Strategy MowZone Scalping 5m (EMA+MACD+ATR+SSL) (Indicador)", overlay=true)
+
+// =======================
+// Parámetros de Entrada
+// =======================
+
+// EMA 200
+len_MA    = input.int(200, "EMA200 Length", group="MA Settings")
+src_MA    = input(close, "EMA200 Source", group="MA Settings")
+offset_MA = input.int(0, "EMA200 Offset", group="MA Settings", minval=-500, maxval=500)
+ema200    = ta.ema(src_MA, len_MA)
+plot(ema200, title="EMA200", color=color.yellow, offset=offset_MA)
+
+// MACD
+fast_length_MACD   = input.int(12, "MACD Fast Length", group="MACD Settings")
+slow_length_MACD   = input.int(26, "MACD Slow Length", group="MACD Settings")
+signal_length_MACD = input.int(9, "MACD Signal Length", group="MACD Settings")
+src_MACD           = input(close, "MACD Source", group="MACD Settings")
+macd_MAType        = input.string("EMA", "MACD MA Type", options=["SMA", "EMA"], group="MACD Settings")
+macd_SignalMAType  = input.string("EMA", "MACD Signal MA Type", options=["SMA", "EMA"], group="MACD Settings")
+fast_ma_MACD = macd_MAType == "SMA" ? ta.sma(src_MACD, fast_length_MACD) : ta.ema(src_MACD, fast_length_MACD)
+slow_ma_MACD = macd_MAType == "SMA" ? ta.sma(src_MACD, slow_length_MACD) : ta.ema(src_MACD, slow_length_MACD)
+macdLine    = fast_ma_MACD - slow_ma_MACD
+signalLine  = macd_SignalMAType == "SMA" ? ta.sma(macdLine, signal_length_MACD) : ta.ema(macdLine, signal_length_MACD)
+histMACD    = macdLine - signalLine
+
+// Input Parameters for profit target and stop loss
+G_ATR = "Settings of Profit and Loss"
+showSLTPLines = input.bool(title="Show Stop Loss & Take Profit Lines?", defval=true, group = G_ATR)
+Periods3 = input.int(title="Profit Target ATR Period", defval=14, group = G_ATR)
+Periods4 = input.int(title="Stop Loss ATR Period", defval=14, group = G_ATR)
+profitTargetMultiplier = input.float(title="Profit Target Multiplier", defval=3, group = G_ATR)
+stopLossMultiplier = input.float(title="Stop Loss Multiplier", defval=1.5, group = G_ATR)
+showsignals = input.bool(title="Show Buy/Sell Signals?", defval=true, group = G_ATR)
+
+// SSL
+lb_SSL    = input.int(12, "SSL Period", group="SSL Settings")
+maType_SSL = input.string("SMA", "SSL MA Type", options=["SMA", "EMA", "HMA", "McG", "WMA", "Tenkan", "DEMA", "TEMA", "Smoothed", "SuperSmoothed"], group="SSL Settings")
+
+// =======================
+// Funciones MA Avanzadas
+// =======================
+hma(src, n) =>
+    ta.wma(2 * ta.wma(src, math.round(n / 2)) - ta.wma(src, n), math.round(math.sqrt(n)))
+
+mcg(src, length) =>
+    var float mg = na
+    float ema1 = ta.ema(src, length)
+    mg := na(mg[1]) ? ema1 : mg[1] + (src - mg[1]) / (length * math.pow(src/mg[1], 4))
+    mg
+
+tenkan(src, len) => 0.5 * (ta.highest(src, len) + ta.lowest(src, len))
+
+ssma(src, len) =>
+    a1 = math.exp(-1.414 * math.pi / len)
+    b1 = 2 * a1 * math.cos(1.414 * math.pi / len)
+    c2 = b1
+    c3 = -a1 * a1
+    c1 = 1 - c2 - c3
+    var float v = na
+    v := c1 * (src + nz(src[1])) / 2 + c2 * nz(v[1]) + c3 * nz(v[2])
+    v
+
+smma(src, len) =>
+    var float v = na
+    float sma1 = ta.sma(src, len)
+    v := na(v[1]) ? sma1 : (v[1] * (len - 1) + src) / len
+    v
+
+dema(src, len) =>
+    v1 = ta.ema(src, len)
+    2 * v1 - ta.ema(v1, len)
+
+tema(src, len) =>
+    v2 = ta.ema(src, len)
+    3 * (v2 - ta.ema(v2, len)) + ta.ema(ta.ema(v2, len), len)
+
+ma(t, src, len) =>
+    float res = na
+    switch t
+        "SMA"           => res := ta.sma(src, len)
+        "EMA"           => res := ta.ema(src, len)
+        "HMA"           => res := hma(src, len)
+        "McG"           => res := mcg(src, len)
+        "Tenkan"        => res := tenkan(src, len)
+        "WMA"           => res := ta.wma(src, len)
+        "TEMA"          => res := tema(src, len)
+        "DEMA"          => res := dema(src, len)
+        "Smoothed"      => res := smma(src, len)
+        "SuperSmoothed" => res := ssma(src, len)
+    res
+
+// =======================
+// Cálculo del SSL
+// =======================
+maH = ma(maType_SSL, high, lb_SSL)
+maL = ma(maType_SSL, low, lb_SSL)
+maM = ma(maType_SSL, close, lb_SSL)
+base(mah, mal) =>
+    var int bbb = na
+    bool inChannel   = close < mah and close > mal
+    bool belowChannel = close < mah and close < mal
+    bbb := inChannel ? nz(bbb[1], 1) : belowChannel ? -1 : 1
+    float uuu = bbb == 1 ? mal : mah
+    float ddd = bbb == 1 ? mah : mal
+    [uuu, ddd]
+[up, dn] = base(maH, maL)
+[slHigh, slLow] = base(maH, maL)
+
+plot(maM, "SSL Baseline", color.new(#FFFF00, 0), 1)
+p1 = plot(up, "SSL Up", color.lime, 2)
+p2 = plot(dn, "SSL Down", color.orange, 2)
+fill(p1, p2, color = up > dn ? color.new(color.red, 65) : color.new(color.green, 65))
+
+// =======================
+// Condiciones de Entrada
+// =======================
+crossoverMACD = ta.crossover(macdLine, signalLine)
+crossunderMACD = ta.crossunder(macdLine, signalLine)
+
+// Detección de cruces SSL
+sslBullishCrossover = (up < dn) and (up[1] > dn[1])
+sslBearishCrossover = (up > dn) and (up[1] < dn[1])
+
+// Posición SSL respecto a EMA200
+sslAboveEMA200 = maM > ema200
+sslBelowEMA200 = maM < ema200
+
+//Take profit and Stop loss levels
+var float long_tp_level = na
+var float long_sl_level = na
+var float short_tp_level = na
+var float short_sl_level = na
+
+//Are we in a trade?
+var bool inTrade      = false
+var int  tradeType    = 0    // 1: long, -1: short
+var int   entrySSLState = 0
+var bool in_long_trade = false
+var bool in_short_trade = false
+
+// At what price did we enter?
+var float long_entry_price = na
+var float short_entry_price = na
+
+// Calculate ATR for Profit target and Stop Losses
+Profit_ATR = ta.atr(Periods3)
+Stop_ATR = ta.atr(Periods4)
+
+// Signals entry Long and Short with something filters
+long_entry = (close > ema200) and sslBullishCrossover and sslAboveEMA200 and crossoverMACD and macdLine < 0 and signalLine < 0
+short_entry = (close < ema200) and sslBearishCrossover and sslBelowEMA200 and crossunderMACD and macdLine > 0 and signalLine > 0
+
+// Apertura de operación (solo se permite una a la vez)
+if not inTrade
+    if long_entry
+        inTrade      := true
+        tradeType    := 1
+        long_tp_level := close + (Profit_ATR * profitTargetMultiplier)
+        long_sl_level := close - (Stop_ATR * stopLossMultiplier)
+        in_long_trade := true
+        long_entry_price := close
+        short_entry := false
+    else if short_entry
+        inTrade      := true
+        tradeType    := -1
+        short_tp_level := close - (Profit_ATR * profitTargetMultiplier)
+        short_sl_level := close + (Stop_ATR * stopLossMultiplier)
+        in_short_trade := true
+        short_entry_price := close
+        long_entry := false
+
+// Condiciones de salida
+if inTrade
+    // Para operaciones long
+    if tradeType == 1
+        exitSL  = (low <= slHigh)
+        if exitSL
+            exitPrice = exitSL ? slHigh : close
+            inTrade      := false
+            tradeType    := 0
+            entrySSLState:= 0
+            long_entry_price := na
+
+    // Para operaciones short
+    else if tradeType == -1
+        exitSL  = (high >= slHigh)
+        if exitSL
+            exitPrice = exitSL ? slHigh : close
+            inTrade      := false
+            tradeType    := 0
+            entrySSLState:= 0
+            short_entry_price := na
+    
+//Define the exits
+// Exits on Long
+crossoverLongTPlevelHIGH = ta.crossover(high, long_tp_level)
+crossoverLongTPlevelCLOSE = ta.crossover(close, long_tp_level)
+crossunderLongSLlevel =  ta.crossunder(close, long_sl_level)
+// Exits on Short
+crossunderShortTPlevelLOW = ta.crossunder(low, short_tp_level)
+crossunderShortTPlevelCLOSE = ta.crossunder(close, short_tp_level)
+crossoverShortSLlevel =  ta.crossover(close, short_sl_level)
+
+long_tp_reached = in_long_trade and (crossoverLongTPlevelCLOSE or crossoverLongTPlevelHIGH)
+long_sl_reached = in_long_trade and crossunderLongSLlevel
+short_tp_reached = in_short_trade and (crossunderShortTPlevelCLOSE or crossunderShortTPlevelLOW)
+short_sl_reached = in_short_trade and crossoverShortSLlevel
+
+long_exit = long_tp_reached or long_sl_reached
+if long_exit
+    in_long_trade := false
+
+short_exit = short_tp_reached or short_sl_reached
+if short_exit
+    in_short_trade := false
+
+
+// Plotting Entry and Exit Signals
+plotshape(long_entry and showsignals ? close : na, title="Buy", text="Buy", location=location.belowbar, style=shape.labelup, size=size.tiny, color=color.green, textcolor=color.white)
+plotshape(short_entry and showsignals ? close : na, title="Sell", text="Sell", location=location.abovebar, style=shape.labeldown, size=size.tiny, color=color.red, textcolor=color.white)
+
+plotshape(long_exit and showsignals and long_tp_reached ? close : na, title="Exit", text="TP", location=location.abovebar, style=shape.circle, size=size.tiny, color=color.green, textcolor=color.white)
+plotshape(long_exit and showsignals and long_sl_reached ? close : na, title="Exit", text="SL", location=location.abovebar, style=shape.xcross, size=size.tiny, color=color.red, textcolor=color.white)
+plotshape(short_exit and showsignals and short_tp_reached ? close : na, title="Exit", text="TP", location=location.belowbar, style=shape.circle, size=size.tiny, color=color.red, textcolor=color.white)
+plotshape(short_exit and showsignals and short_sl_reached ? close : na, title="Exit", text="SL", location=location.belowbar, style=shape.xcross, size=size.tiny, color=color.green, textcolor=color.white)
+
+// Add alert conditions for long and short entries
+alertcondition(long_entry, title="Long Entry", message="Long Entry Signal: Price has crossed both Supertrends.")
+alertcondition(short_entry, title="Short Entry", message="Short Entry Signal: Price has crossed both Supertrends.")
+
+//Plotting take profit and stop loss levels
+plot(showSLTPLines and in_long_trade ? long_sl_level : na, title="Long Stop Loss", style=plot.style_linebr, linewidth=1, color=color.red)
+plot(showSLTPLines and in_long_trade ? long_tp_level : na, title="Long Take Profit", style=plot.style_linebr, linewidth=1, color=color.green)
+plot(showSLTPLines and in_short_trade ? short_sl_level : na, title="Short Stop Loss", style=plot.style_linebr, linewidth=1, color=color.red)
+plot(showSLTPLines and in_short_trade ? short_tp_level : na, title="Short Take Profit", style=plot.style_linebr, linewidth=1, color=color.green)
+
+// BUILDING A TRADING STATISTICS TABLE BELOW
+// Initialize trade counters and running profit/loss
+var int total_wins = 0
+var int total_losses = 0
+var float running_profit = 0.0
+var float running_loss = 0.0
+
+// Update trade counters and running profit/loss
+if (long_exit and showsignals)
+    if (long_tp_reached)
+        total_wins := total_wins + 1
+        running_profit := running_profit + (close - long_entry_price)
+    else if (long_sl_reached)
+        total_losses := total_losses + 1
+        running_loss := running_loss + (long_entry_price - close)
+
+if (short_exit and showsignals)
+    if (short_tp_reached)
+        total_wins := total_wins + 1
+        running_profit := running_profit + (short_entry_price - close)
+    else if (short_sl_reached)
+        total_losses := total_losses + 1
+        running_loss := running_loss + (close - short_entry_price)
+
+// Calculate win/loss percentage and average profit/loss
+float win_percentage = total_wins + total_losses > 0 ? total_wins * 100 / (total_wins + total_losses) : na
+float avg_profit = total_wins > 0 ? running_profit / total_wins : na
+float avg_loss = total_losses > 0 ? running_loss / total_losses : na
+float pnl = running_profit + running_loss
+
+
+// Table initialization and update functions
+init_table() =>
+    c_transparent = color.new(color.black, 100)
+    table.new(position.top_right, columns=2, rows=6, frame_color=color.new(color.black, 100), frame_width=1, border_width=1, border_color=c_transparent)
+
+update_table(tbl, totalWins, totalLosses, winPercentage) =>
+    table.cell(tbl, 0, 0, "Winning Trades", bgcolor=color.gray, text_color=color.white)
+    table.cell(tbl, 1, 0, str.tostring(totalWins), bgcolor=color.green, text_color=color.white)
+
+    table.cell(tbl, 0, 1, "Losing Trades", bgcolor=color.gray, text_color=color.white)
+    table.cell(tbl, 1, 1, str.tostring(totalLosses), bgcolor=color.red, text_color=color.white)
+
+    table.cell(tbl, 0, 2, "% Profitable", bgcolor=color.gray, text_color=color.white)
+    table.cell(tbl, 1, 2, not na(winPercentage) ? str.tostring(winPercentage, "0") + "%" : "N/A", bgcolor=color.gray, text_color=color.white)
+
+
+mytable = init_table()
+update_table(mytable, total_wins, total_losses, win_percentage)
