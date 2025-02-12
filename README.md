@@ -67,7 +67,7 @@ Estrategia de scalping diseñada para operar en temporalidad de 5 minutos, combi
 
 🛠 **Última actualización:** 12/02/2025
 
-🚀 **Desarrollado por [@mowgl1ph](https://tradingview.com/u/jelvys_triana) - [GitHub](https://github.com/mowgl1ph)**
+🚀 **Desarrollado por [@mowgl1ph](https://tradingview.com/u/jelvys_triana) - [GitHub](https://github.com/mowgliph)**
 
 🌟 **¡Importante!**
 > Esta estrategia funciona mejor en mercados con tendencia. En laterales, reducir tamaño de posición o evitar operar.
