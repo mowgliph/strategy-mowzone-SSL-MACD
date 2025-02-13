@@ -1,9 +1,9 @@
-# MowZone Scalping 5m (EMA+MACD+ATR+SSL)
+# MowZone Scalping 30m (EMA+MACD+ATR+SSL)
 
 > **Para TradingView - Pine Script™**
 
 ## 🔥 Descripción
-Estrategia de scalping diseñada para operar en temporalidad de 5 minutos, combinando 4 indicadores técnicos para filtrar operaciones de alta probabilidad. Su enfoque multidivergente (tendencia + momentum + volatilidad) busca capturar movimientos rápidos del precio con un ratio riesgo/recompensa favorable.
+Estrategia de scalping diseñada para operar en temporalidad de 30 minutos, combinando 4 indicadores técnicos para filtrar operaciones de alta probabilidad. Su enfoque multidivergente (tendencia + momentum + volatilidad) busca capturar movimientos rápidos del precio con un ratio riesgo/recompensa favorable.
 
 ## 📊 Indicadores Utilizados
 - **EMA 200:**
