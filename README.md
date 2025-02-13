@@ -1,4 +1,4 @@
-# MowZone Scalping 30m (EMA+MACD+ATR+SSL)
+# Strategy MowZone 30m (EMA+MACD+ATR+SSL) (Indicador)
 
 > **Para TradingView - Pine Script™**
 
